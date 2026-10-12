@@ -67,6 +67,7 @@ const unsigned long EXIT_HOLD_MS = 0;   // ทางออก: 0 = เจอร�
 const unsigned long CAR_MIN_MS = 120;   // S2 เจอวัตถุอย่างน้อยเท่านี้ถึงนับเป็นรถ
 const unsigned long S2_GAP_MS = 60;     // ช่องว่างสัญญาณ S2 สั้นกว่านี้ถือเป็นรถคันเดิม
 const unsigned long S1_TO_S2_MS = 20000; // ต้องเคยเจอที่ S1 ภายในเวลานี้ก่อนนับที่ S2
+const unsigned long ENTRY_S2_DELAY_MS = 3000; // [แก้ไข] หลังยกไม้กั้นเข้า เมิน S2 นานเท่านี้ (3 วินาที)
 bool s1Lock = false;                    // true = ไม้กั้นเปิดแล้วไม่มีรถผ่าน ห้ามเปิดซ้ำจนกว่า S1 ว่าง
 unsigned long s1DetectSince = 0;        // เวลาที่ S1 เริ่มเจอรถต่อเนื่อง
 unsigned long lastS1At = 0;             // เวลาล่าสุดที่ S1 เจอรถ
@@ -417,8 +418,10 @@ void loop() {                           // ทำงานวนซ้ำตล�
   // ---------- 2.5 นับรถเข้าด้วย S2 ตัวเดียว ----------
   unsigned long s2Low, s2Best;          // สำเนาค่าจาก interrupt
   noInterrupts(); s2Low = s2LowSince; s2Best = s2BestMs; s2BestMs = 0; interrupts(); // อ่านค่าแบบปลอดภัย แล้วล้าง s2BestMs
-  bool s2Pulse = inSensor2 || s2Best > 0; // S2 มีสัญญาณ (เจอตอนนี้ หรือ interrupt จับได้)
-  bool s2CarLike = (s2Best >= CAR_MIN_MS) || (s2Low != 0 && currentMillis - s2Low >= CAR_MIN_MS); // สัญญาณนานพอจะเป็นรถ
+  // [แก้ไข] ช่วงหน่วง: หลังยกไม้กั้นเข้า ยังไม่ฟัง S2 จนกว่าจะครบ ENTRY_S2_DELAY_MS (กันคนเดินผ่านแล้วไม้กั้นปิดทับรถ)
+  bool s2Ignore = (entState == ENT_WAIT_PASS) && (currentMillis - entTimer < ENTRY_S2_DELAY_MS); // [แก้ไข] true = ไม้กั้นเพิ่งยก ยังอยู่ในช่วงหน่วง ให้เมิน S2
+  bool s2Pulse = !s2Ignore && (inSensor2 || s2Best > 0); // [แก้ไข] S2 มีสัญญาณ และไม่อยู่ในช่วงหน่วง
+  bool s2CarLike = !s2Ignore && ((s2Best >= CAR_MIN_MS) || (s2Low != 0 && currentMillis - s2Low >= CAR_MIN_MS)); // [แก้ไข] สัญญาณนานพอเป็นรถ และไม่อยู่ในช่วงหน่วง (คนเดินผ่านจึงไม่ถูกนับ)
   if (s2Armed) {                        // พร้อมนับรถคันใหม่
     if (s2CarLike && lastS1At != 0 && currentMillis - lastS1At <= S1_TO_S2_MS) { // เหมือนรถ และเพิ่งผ่าน S1 มา
       passCount++;                      // เพิ่มจำนวนรถในลาน
